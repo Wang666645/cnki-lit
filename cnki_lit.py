@@ -237,6 +237,22 @@ def _parse_rows(t):
 
 
 # ---------------------------------------------------------------- detail
+def _parse_source(t):
+    """从 top-tip 块解析：期刊, 年, 卷, 期, 页码。形如「科技和产业 . 2026 ,26 (22) : 233-244」。"""
+    m = re.search(r'class="top-tip"[^>]*>(.*?)</div>', t, re.S)
+    block = m.group(1) if m else ""
+    ja = re.search(r"<a[^>]*>(.*?)</a>", block, re.S)
+    journal = re.sub(r"\s+", " ", _clean(ja.group(1))).strip(" .·,") if ja else ""
+    txt = re.sub(r"\s+", " ", _clean(block)).split("查看")[0]
+    year = volume = issue = pages = ""
+    mm = re.search(
+        r"((?:19|20)\d{2})\s*[,，]?\s*(\d+)?\s*[（(]\s*(\d+)\s*[)）]\s*[:：]\s*([0-9A-Za-z\-–~+]+)",
+        txt)
+    if mm:
+        year, volume, issue, pages = mm.group(1), mm.group(2) or "", mm.group(3), mm.group(4)
+    return journal, year, volume, issue, pages
+
+
 def detail(url):
     r = session().get(url, timeout=45)
     if r.status_code != 200:
@@ -245,12 +261,20 @@ def detail(url):
     def pick(pat):
         m = re.search(pat, t, re.S)
         return _clean(m.group(1)) if m else ""
+    journal, year, volume, issue, pages = _parse_source(t)
+    doi_m = re.search(r"(10\.\d{4,9}/[-._;()/:A-Za-z0-9]+)", t)
     out = {
-        "title": pick(r'<h1[^>]*id="[^"]*title"[^>]*>(.*?)</h1>') or pick(r"<title>(.*?)</title>"),
-"abstract": _clean_abs(pick(r'class="abstract-text"[^>]*>(.*?)</div>')),
+        "title": re.sub(r"\s*-\s*中国知网.*$", "", pick(r'<h1[^>]*id="[^"]*title"[^>]*>(.*?)</h1>') or pick(r"<title>(.*?)</title>")).strip(),
+        "abstract": _clean_abs(pick(r'class="abstract-text"[^>]*>(.*?)</div>')),
         "keywords": [k.strip() for k in re.split(r"[;；]", pick(r'class="keywords"[^>]*>(.*?)</p>')) if k.strip()],
         "authors": pick(r'class="author"[^>]*>(.*?)</h3>'),
-        "source": pick(r'class="top-tip"[^>]*>(.*?)</a>'),
+        "source": journal,
+        "journal": journal,
+        "year": year,
+        "volume": volume,
+        "issue": issue,
+        "pages": pages,
+        "doi": doi_m.group(1) if doi_m else "",
         "url": url,
     }
     out["pdf_links"] = [html.unescape(x) for x in
@@ -315,6 +339,8 @@ def collect(keyword, limit=20, field="SU", outdir=None, with_pdf=True):
             rec["abstract"] = d["abstract"]
             rec["keywords"] = d["keywords"]
             rec["authors"] = d["authors"] or rec["authors"]
+            for k in ("journal", "year", "volume", "issue", "pages", "doi"):
+                rec[k] = d.get(k, "")
         except Err as e:
             rec["abstract"], rec["keywords"], rec["error"] = "", [], e.code
         if with_pdf:
@@ -330,11 +356,24 @@ def collect(keyword, limit=20, field="SU", outdir=None, with_pdf=True):
             fh.write("TY  - JOUR\n")
             fh.write(f"TI  - {r['title']}\n")
             for au in re.split(r"[；;]|\s{2,}", r.get("authors", "")):
-                if au.strip():
-                    fh.write(f"AU  - {au.strip()}\n")
-            fh.write(f"JO  - {r.get('source', '')}\n")
-            fh.write(f"PY  - {(r.get('date') or '')[:4]}\n")
+                au = re.sub(r"\d+$", "", au.strip()).strip()
+                if au:
+                    fh.write(f"AU  - {au}\n")
+            fh.write(f"JO  - {r.get('journal') or r.get('source', '')}\n")
+            fh.write(f"PY  - {r.get('year') or (r.get('date') or '')[:4]}\n")
             fh.write(f"DA  - {r.get('date', '')}\n")
+            if r.get("volume"):
+                fh.write(f"VL  - {r['volume']}\n")
+            if r.get("issue"):
+                fh.write(f"IS  - {r['issue']}\n")
+            pages = r.get("pages") or ""
+            if pages:
+                first, _, last = pages.partition("-")
+                fh.write(f"SP  - {first}\n")
+                if last:
+                    fh.write(f"EP  - {last}\n")
+            if r.get("doi"):
+                fh.write(f"DO  - {r['doi']}\n")
             if r.get("abstract"):
                 fh.write(f"AB  - {r['abstract']}\n")
             for kw in r.get("keywords") or []:
@@ -356,6 +395,8 @@ def review_bundle(keyword, limit=15, field="SU"):
             d = detail(it["url"])
             rec["abstract"] = d["abstract"]
             rec["keywords"] = d["keywords"]
+            for k in ("journal", "year", "volume", "issue", "pages", "doi"):
+                rec[k] = d.get(k, "")
         except Err as e:
             rec["abstract"], rec["keywords"], rec["error"] = "", [], e.code
         out.append(rec)

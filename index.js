@@ -200,7 +200,14 @@ function renderSearch(v) {
 function renderDetail(v) {
   if (v && v.ok === false) return failText(v);
   const d = unwrap(v);
-  return `${line(d.title)}\n\n${line(d.abstract).slice(0, 600)}\n\n关键词：${(d.keywords || []).join(' / ')}`;
+  const parts = [];
+  if (d.journal) parts.push(line(d.journal));
+  if (d.year) parts.push(String(d.year));
+  if (d.volume || d.issue) parts.push(`${d.volume || ''}${d.issue ? `(${d.issue})` : ''}`);
+  let cite = parts.join(', ');
+  if (d.pages) cite += `: ${d.pages}`;
+  const doi = d.doi ? `\nDOI：${d.doi}` : '';
+  return `${line(d.title)}\n${cite}${doi}\n\n${line(d.abstract).slice(0, 600)}\n\n关键词：${(d.keywords || []).join(' / ')}`;
 }
 
 function renderDownload(v) {
@@ -221,5 +228,9 @@ function renderReview(v) {
   const d = unwrap(v);
   const items = d.items || [];
   return `主题「${d.keyword}」共 ${d.total ?? '?'} 条，已取 ${items.length} 篇摘要：\n` +
-    items.map((it, i) => `${i + 1}. ${line(it.title)}（${line(it.source)}，${line(it.date)}）\n    ${it.url}`).join('\n');
+    items.map((it, i) => {
+      const src = line(it.journal || it.source);
+      const vi = [it.year, it.volume ? `${it.volume}卷` : '', it.issue ? `${it.issue}期` : '', it.pages ? `: ${it.pages}` : ''].filter(Boolean).join(' ');
+      return `${i + 1}. ${line(it.title)}（${src}${vi ? '，' + vi : ''}）\n    ${it.url}`;
+    }).join('\n');
 }
