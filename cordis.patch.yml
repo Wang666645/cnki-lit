@@ -1,0 +1,6 @@
+# Self-registering bundle: one row, one plugin package.
+# 机器相关的路径请在 profile 的 cordis.patch.yml 里覆盖这一行的 config，
+# 不要把绝对路径写进包本身。
+- insert:
+    - id: cnki-lit
+      name: 'dsh-plugin-cnki-lit'

@@ -1,0 +1,3 @@
+# Python 依赖（需要与 DSH 插件配置里的 python 同一个解释器）
+requests>=2.31
+playwright>=1.40
